@@ -9,11 +9,21 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +33,14 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,8 +69,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             val prefs = getSharedPreferences("once_in_a_while", MODE_PRIVATE)
             var theme by remember { mutableStateOf(prefs.getString("theme", "Sistema") ?: "Sistema") }
@@ -78,122 +97,461 @@ fun RoutineApp(onExport: () -> Unit, onImport: () -> Unit, theme: String, onThem
     var showEditor by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Todas") }
     var categoryFilter by remember { mutableStateOf("Todas") }
-    var showSettings by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf("Hoje") }
     val categories = listOf("Pessoal", "Casa", "Saúde", "Trabalho", "Família", "Finanças", "Compras", "Projetos")
     val recurrences = listOf("Única", "Diária", "Semanal", "Mensal", "Anual")
     fun refresh() { tasks = TaskStore.all(context).sortedBy { it.dueAt } }
     val now = System.currentTimeMillis()
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Column { Text("ONCE IN A WHILE", fontWeight = FontWeight.Bold); Text("As tuas tarefas, ao teu ritmo", style = MaterialTheme.typography.labelSmall) } },
-            actions = { TextButton(onClick = { showSettings = true }) { Text("Definições") } }
+    val activeTasks = tasks.filter { it.active && !it.done }
+    val completedTasks = tasks.filter { it.done || !it.active }
+    val todayCal = Calendar.getInstance()
+    val todayTasks = activeTasks.filter {
+        val c = Calendar.getInstance().apply { timeInMillis = it.dueAt }
+        c.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) &&
+            c.get(Calendar.DAY_OF_YEAR) == todayCal.get(Calendar.DAY_OF_YEAR)
+    }
+    val overdueTasks = activeTasks.filter { it.dueAt < now }
+    val progress = if (tasks.isEmpty()) 0f else completedTasks.size.toFloat() / tasks.size.toFloat()
+
+    val bg = Color(0xFF0D1020)
+    val panel = Color(0xFF191D32)
+    val panel2 = Color(0xFF222740)
+    val violet = Color(0xFFAA96FF)
+    val mint = Color(0xFF70E1B5)
+    val amber = Color(0xFFFFC078)
+    val onDark = Color(0xFFF5F5FF)
+    val muted = Color(0xFFA8AEC8)
+
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = violet, secondary = mint, tertiary = amber,
+            background = bg, surface = panel, surfaceVariant = panel2,
+            onBackground = onDark, onSurface = onDark, onSurfaceVariant = muted
         )
-    }, floatingActionButton = {
-        FloatingActionButton(onClick = { editing = null; showEditor = true }) { Icon(Icons.Default.Add, "Adicionar tarefa") }
-    }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(8.dp))
-            Text("As tuas tarefas", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            val pending = tasks.count { it.active && !it.done }
-            val done = tasks.count { it.done || !it.active }
-            Text("$pending pendentes · $done concluídas", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LinearProgressIndicator(progress = { if (tasks.isEmpty()) 0f else done.toFloat() / tasks.size }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                listOf("Todas", "Atrasadas", "Hoje", "Futuras", "Concluídas").forEach { f ->
-                    FilterChip(
-                        selected = filter == f,
-                        onClick = { filter = f },
-                        label = { Text(f, maxLines = 1, softWrap = false) }
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                (listOf("Todas") + categories).forEach { c ->
-                    FilterChip(
-                        selected = categoryFilter == c,
-                        onClick = { categoryFilter = c },
-                        label = { Text(c, maxLines = 1, softWrap = false) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            val todayCal = Calendar.getInstance()
-            val visible = tasks.filter { task ->
-                val taskCal = Calendar.getInstance().apply { timeInMillis = task.dueAt }
-                val sameDay = taskCal.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) && taskCal.get(Calendar.DAY_OF_YEAR) == todayCal.get(Calendar.DAY_OF_YEAR)
-                val status = when (filter) {
-                    "Atrasadas" -> task.active && !task.done && task.dueAt < now
-                    "Hoje" -> task.active && !task.done && sameDay
-                    "Futuras" -> task.active && !task.done && task.dueAt > now && !sameDay
-                    "Concluídas" -> task.done || !task.active
-                    else -> true
-                }
-                status && (categoryFilter == "Todas" || task.category == categoryFilter)
-            }
-            if (visible.isEmpty()) {
-                Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Notifications, null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text(if (filter == "Todas") "Começa com uma tarefa" else "Sem tarefas nesta secção", style = MaterialTheme.typography.titleMedium)
-                        Text("Os teus dados ficam guardados localmente.", style = MaterialTheme.typography.bodyMedium)
+    ) {
+        Scaffold(
+            containerColor = bg,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("ONCE IN A WHILE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                            Text(
+                                when (page) {
+                                    "Hoje" -> SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date()).replaceFirstChar { it.uppercase() }
+                                    "Tarefas" -> "Tudo o que tens em mãos"
+                                    "Histórico" -> "O progresso que construíste"
+                                    else -> "Personaliza a tua experiência"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = muted
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { page = "Definições" }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Definições", tint = violet)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = bg)
+                )
+            },
+            bottomBar = {
+                NavigationBar(containerColor = panel, contentColor = violet) {
+                    listOf(
+                        Triple("Hoje", Icons.Default.Home, "Hoje"),
+                        Triple("Tarefas", Icons.Default.List, "Tarefas"),
+                        Triple("Histórico", Icons.Default.BarChart, "Histórico"),
+                        Triple("Definições", Icons.Default.Settings, "Definições")
+                    ).forEach { (label, icon, destination) ->
+                        NavigationBarItem(
+                            selected = page == destination,
+                            onClick = {
+                                page = destination
+                            },
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = violet,
+                                selectedTextColor = violet,
+                                indicatorColor = Color(0xFF302A50),
+                                unselectedIconColor = muted,
+                                unselectedTextColor = muted
+                            )
+                        )
                     }
                 }
-            } else LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
-                items(visible, key = { it.id }) { task ->
-                    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f).clickable { editing = task; showEditor = true }.padding(vertical = 4.dp)) {
-                                Text(task.title, fontWeight = FontWeight.SemiBold)
-                                Text("${task.category} · ${task.recurrence}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                val schedule = when (task.scheduleMode) {
-                                    "daily" -> "Pelo menos uma vez por dia"
-                                    "periods" -> task.periods.joinToString(", ")
-                                    else -> SimpleDateFormat("EEE, dd MMM · HH:mm", Locale.getDefault()).format(Date(task.dueAt))
+            },
+            floatingActionButton = {
+                if (page == "Hoje" || page == "Tarefas") {
+                    FloatingActionButton(
+                        onClick = { editing = null; showEditor = true },
+                        containerColor = violet,
+                        contentColor = Color(0xFF171326),
+                        shape = RoundedCornerShape(20.dp)
+                    ) { Icon(Icons.Default.Add, "Adicionar tarefa") }
+                }
+            }
+        ) { padding ->
+            when (page) {
+                "Hoje" -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(padding),
+                        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 100.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF292448), Color(0xFF1A2039))),
+                                        RoundedCornerShape(28.dp)
+                                    ).padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(Icons.Default.AutoAwesome, null, tint = violet, modifier = Modifier.size(17.dp))
+                                        Text("O TEU RITMO", color = violet, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                                    }
+                                    Text("Um passo de cada vez.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = onDark)
+                                    Text(
+                                        when {
+                                            activeTasks.isEmpty() -> "Tudo tratado. Aproveita o momento."
+                                            overdueTasks.isNotEmpty() -> "Vamos recuperar o ritmo, sem pressão."
+                                            else -> "Pequenas ações, progresso real."
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium, color = muted
+                                    )
                                 }
-                                Text(schedule, style = MaterialTheme.typography.bodySmall)
-                                if (task.done || !task.active) Text("Concluída", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelMedium)
+                                Spacer(Modifier.width(8.dp))
+                                ProgressRing(progress = progress, value = "${(progress * 100).toInt()}%", violet = violet, track = Color(0xFF41405F), textColor = onDark)
                             }
-                            IconButton(onClick = { editing = task; showEditor = true }) { Icon(Icons.Default.Edit, "Editar") }
-                            if (task.active && !task.done) IconButton(onClick = { TaskStore.markDone(context, task.id); ReminderScheduler.cancel(context, task.id); refresh() }) { Icon(Icons.Default.Check, "Concluir") }
-                            IconButton(onClick = { ReminderScheduler.cancel(context, task.id); TaskStore.saveAll(context, TaskStore.all(context).filterNot { it.id == task.id }); refresh() }) { Icon(Icons.Default.Delete, "Eliminar") }
+                        }
+                        item {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                PremiumMetric("Para hoje", todayTasks.size.toString(), Icons.Default.Schedule, violet, Modifier.weight(1f))
+                                PremiumMetric("Pendentes", activeTasks.size.toString(), Icons.Default.List, amber, Modifier.weight(1f))
+                                PremiumMetric("Concluídas", completedTasks.size.toString(), Icons.Default.CheckCircle, mint, Modifier.weight(1f))
+                            }
+                        }
+                        item {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("A seguir", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = onDark)
+                                    Text("As tarefas que pedem atenção", style = MaterialTheme.typography.bodySmall, color = muted)
+                                }
+                                TextButton(onClick = { page = "Tarefas"; filter = "Todas" }) { Text("Ver todas", color = violet) }
+                            }
+                        }
+                        if (activeTasks.isEmpty()) {
+                            item {
+                                EmptyPremiumCard(
+                                    title = "Espaço para respirar",
+                                    subtitle = "Não tens tarefas pendentes. Adiciona uma quando precisares.",
+                                    violet = violet, panel = panel, muted = muted
+                                )
+                            }
+                        } else {
+                            items(activeTasks.sortedWith(compareBy<Task> { if (it.dueAt < now) 0 else 1 }.thenBy { it.dueAt }).take(5), key = { it.id }) { task ->
+                                PremiumTaskCard(
+                                    task = task, panel = panel, muted = muted, violet = violet, mint = mint,
+                                    onEdit = { editing = task; showEditor = true },
+                                    onDone = {
+                                        TaskStore.markDone(context, task.id)
+                                        ReminderScheduler.cancel(context, task.id)
+                                        refresh()
+                                    },
+                                    onDelete = {
+                                        ReminderScheduler.cancel(context, task.id)
+                                        TaskStore.saveAll(context, TaskStore.all(context).filterNot { it.id == task.id })
+                                        refresh()
+                                    }
+                                )
+                            }
+                        }
+                        item {
+                            Text("Visão geral", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = onDark)
+                            Text("Distribuição por categoria", style = MaterialTheme.typography.bodySmall, color = muted)
+                            Spacer(Modifier.height(10.dp))
+                            CategoryChart(
+                                categories = categories,
+                                counts = categories.map { c -> tasks.count { it.category == c } },
+                                violet = violet, mint = mint, panel = panel, muted = muted, textColor = onDark
+                            )
                         }
                     }
+                }
+                "Tarefas" -> {
+                    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("Todas", "Atrasadas", "Hoje", "Futuras", "Concluídas").forEach { f ->
+                                FilterChip(
+                                    selected = filter == f, onClick = { filter = f },
+                                    label = { Text(f, maxLines = 1, softWrap = false) }
+                                )
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            (listOf("Todas") + categories).forEach { c ->
+                                FilterChip(
+                                    selected = categoryFilter == c, onClick = { categoryFilter = c },
+                                    label = { Text(c, maxLines = 1, softWrap = false) }
+                                )
+                            }
+                        }
+                        val visible = tasks.filter { task ->
+                            val taskCal = Calendar.getInstance().apply { timeInMillis = task.dueAt }
+                            val sameDay = taskCal.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) &&
+                                taskCal.get(Calendar.DAY_OF_YEAR) == todayCal.get(Calendar.DAY_OF_YEAR)
+                            val status = when (filter) {
+                                "Atrasadas" -> task.active && !task.done && task.dueAt < now
+                                "Hoje" -> task.active && !task.done && sameDay
+                                "Futuras" -> task.active && !task.done && task.dueAt > now && !sameDay
+                                "Concluídas" -> task.done || !task.active
+                                else -> true
+                            }
+                            status && (categoryFilter == "Todas" || task.category == categoryFilter)
+                        }
+                        if (visible.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                EmptyPremiumCard("Nada por aqui", "Experimenta outro filtro ou cria uma nova tarefa.", violet, panel, muted)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp)
+                            ) {
+                                items(visible, key = { it.id }) { task ->
+                                    PremiumTaskCard(
+                                        task = task, panel = panel, muted = muted, violet = violet, mint = mint,
+                                        onEdit = { editing = task; showEditor = true },
+                                        onDone = {
+                                            TaskStore.markDone(context, task.id)
+                                            ReminderScheduler.cancel(context, task.id)
+                                            refresh()
+                                        },
+                                        onDelete = {
+                                            ReminderScheduler.cancel(context, task.id)
+                                            TaskStore.saveAll(context, TaskStore.all(context).filterNot { it.id == task.id })
+                                            refresh()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                "Histórico" -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(padding),
+                        contentPadding = PaddingValues(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Text("O progresso conta", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = onDark)
+                            Text("Um retrato das tuas tarefas guardadas", style = MaterialTheme.typography.bodyMedium, color = muted)
+                        }
+                        item {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                PremiumMetric("Total", tasks.size.toString(), Icons.Default.List, violet, Modifier.weight(1f))
+                                PremiumMetric("Feitas", completedTasks.size.toString(), Icons.Default.CheckCircle, mint, Modifier.weight(1f))
+                                PremiumMetric("Atrasadas", overdueTasks.size.toString(), Icons.Default.Schedule, amber, Modifier.weight(1f))
+                            }
+                        }
+                        item {
+                            Text("Tarefas por categoria", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = onDark)
+                            CategoryChart(categories, categories.map { c -> tasks.count { it.category == c } }, violet, mint, panel, muted, onDark)
+                        }
+                        item {
+                            Text("Atividade recente", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = onDark)
+                        }
+                        if (tasks.isEmpty()) item { EmptyPremiumCard("O teu histórico começa aqui", "As tarefas aparecerão nesta área.", violet, panel, muted) }
+                        else items(tasks.sortedByDescending { it.dueAt }.take(20), key = { it.id }) { task ->
+                            Card(colors = CardDefaults.cardColors(containerColor = panel), shape = RoundedCornerShape(18.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (task.done || !task.active) Icons.Default.CheckCircle else Icons.Default.Schedule, null, tint = if (task.done || !task.active) mint else violet)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(task.title, color = onDark, fontWeight = FontWeight.SemiBold)
+                                        Text("${task.category} · ${SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(task.dueAt))}", color = muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text(if (task.done || !task.active) "Feita" else "Pendente", color = if (task.done || !task.active) mint else amber, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    Column(Modifier.fillMaxSize().padding(padding).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text("A tua experiência", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = onDark)
+                        Text("Escolhe o aspeto da aplicação e gere as tuas cópias de segurança.", color = muted)
+                        Card(colors = CardDefaults.cardColors(containerColor = panel), shape = RoundedCornerShape(22.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Tema", color = onDark, fontWeight = FontWeight.Bold)
+                                listOf("Sistema", "Claro", "Escuro").forEach { t ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RadioButton(selected = theme == t, onClick = { onTheme(t) })
+                                        Text(t, color = onDark)
+                                    }
+                                }
+                            }
+                        }
+                        Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = violet, contentColor = Color(0xFF171326))) {
+                            Text("Exportar cópia de segurança")
+                        }
+                        OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importar cópia de segurança") }
+                        Text("Os alarmes e notificações dependem das permissões e das restrições de bateria do Android.", style = MaterialTheme.typography.bodySmall, color = muted)
+                    }
+                }
+            }
+        }
+
+        if (showEditor) TaskEditor(
+            initial = editing, categories = categories, recurrences = recurrences,
+            onDismiss = { showEditor = false },
+            onSave = { task ->
+                editing?.let { ReminderScheduler.cancel(context, it.id) }
+                TaskStore.upsert(context, task)
+                if (task.active && !task.done) ReminderScheduler.schedule(context, task, maxOf(task.dueAt, System.currentTimeMillis() + 1000L))
+                showEditor = false
+                editing = null
+                refresh()
+            }
+        )
+    }
+}
+
+@Composable
+private fun ProgressRing(progress: Float, value: String, violet: Color, track: Color, textColor: Color) {
+    val animated by animateFloatAsState(targetValue = progress.coerceIn(0f, 1f), animationSpec = tween(900), label = "progress")
+    Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 8.dp.toPx()
+            drawArc(track, -90f, 360f, false, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawArc(violet, -90f, 360f * animated, false, style = Stroke(stroke, cap = StrokeCap.Round))
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, color = textColor, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+            Text("feito", color = violet, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun PremiumMetric(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Color(0xFF191D32)), shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(21.dp))
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF5F5FF))
+            Text(title, style = MaterialTheme.typography.labelSmall, color = Color(0xFFA8AEC8), maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PremiumTaskCard(
+    task: Task, panel: Color, muted: Color, violet: Color, mint: Color,
+    onEdit: () -> Unit, onDone: () -> Unit, onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onEdit() },
+        colors = CardDefaults.cardColors(containerColor = panel),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(43.dp).background(
+                    when (task.category) {
+                        "Saúde" -> Color(0xFF1D423D)
+                        "Casa" -> Color(0xFF3A304D)
+                        "Trabalho" -> Color(0xFF273958)
+                        "Finanças" -> Color(0xFF493927)
+                        "Família" -> Color(0xFF493047)
+                        else -> Color(0xFF302B50)
+                    }, RoundedCornerShape(14.dp)
+                ), contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    when (task.category) {
+                        "Saúde" -> Icons.Default.CheckCircle
+                        "Trabalho" -> Icons.Default.TrendingUp
+                        else -> Icons.Default.AutoAwesome
+                    }, null, tint = violet, modifier = Modifier.size(21.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(task.title, color = Color(0xFFF5F5FF), fontWeight = FontWeight.SemiBold)
+                Text("${task.category} · ${task.recurrence}", color = violet, style = MaterialTheme.typography.labelSmall)
+                val schedule = when (task.scheduleMode) {
+                    "daily" -> "Pelo menos uma vez por dia"
+                    "periods" -> task.periods.joinToString(", ")
+                    else -> SimpleDateFormat("EEE, dd MMM · HH:mm", Locale.getDefault()).format(Date(task.dueAt))
+                }
+                Text(schedule, color = muted, style = MaterialTheme.typography.bodySmall)
+                if (task.done || !task.active) Text("Concluída", color = mint, style = MaterialTheme.typography.labelMedium)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (task.active && !task.done) {
+                    IconButton(onClick = onDone) { Icon(Icons.Default.Check, "Concluir", tint = mint) }
+                } else {
+                    Icon(Icons.Default.CheckCircle, null, tint = mint, modifier = Modifier.padding(12.dp).size(20.dp))
+                }
+                Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Edit, "Editar", tint = muted, modifier = Modifier.size(17.dp)) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) { Icon(Icons.Default.Delete, "Eliminar", tint = muted, modifier = Modifier.size(17.dp)) }
                 }
             }
         }
     }
-    if (showEditor) TaskEditor(
-        initial = editing, categories = categories, recurrences = recurrences,
-        onDismiss = { showEditor = false },
-        onSave = { task ->
-            editing?.let { ReminderScheduler.cancel(context, it.id) }
-            TaskStore.upsert(context, task)
-            if (task.active && !task.done) ReminderScheduler.schedule(context, task, maxOf(task.dueAt, System.currentTimeMillis() + 1000L))
-            showEditor = false; editing = null; refresh()
-        }
-    )
-    if (showSettings) AlertDialog(
-        onDismissRequest = { showSettings = false },
-        title = { Text("Definições") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Tema")
-            listOf("Sistema", "Claro", "Escuro").forEach { t ->
-                Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected = theme == t, onClick = { onTheme(t) }); Text(t) }
+}
+
+@Composable
+private fun CategoryChart(
+    categories: List<String>, counts: List<Int>, violet: Color, mint: Color,
+    panel: Color, muted: Color, textColor: Color
+) {
+    val maxCount = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
+    Card(colors = CardDefaults.cardColors(containerColor = panel), shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            categories.forEachIndexed { index, category ->
+                val count = counts.getOrElse(index) { 0 }
+                val fraction = count.toFloat() / maxCount.toFloat()
+                val animated by animateFloatAsState(fraction, animationSpec = tween(700 + index * 45), label = "category-$index")
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(category, color = textColor, style = MaterialTheme.typography.bodySmall)
+                        Text(count.toString(), color = muted, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Box(Modifier.fillMaxWidth().height(7.dp).background(Color(0xFF30344D), RoundedCornerShape(20.dp))) {
+                        Box(
+                            Modifier.fillMaxWidth(animated.coerceIn(0f, 1f)).height(7.dp)
+                                .background(if (index % 3 == 0) mint else violet, RoundedCornerShape(20.dp))
+                        )
+                    }
+                }
             }
-            OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Exportar cópia de segurança") }
-            OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importar cópia de segurança") }
-            Text("Manhã 08:00–12:00 · Tarde 12:00–18:00 · Noite 18:00–22:00", style = MaterialTheme.typography.bodySmall)
-            Text("Os resumos diários e os alarmes dependem das permissões e das restrições do Android.", style = MaterialTheme.typography.bodySmall)
-        } },
-        confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Fechar") } }
-    )
+            Text("Dados calculados a partir das tarefas guardadas neste dispositivo.", color = muted, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun EmptyPremiumCard(title: String, subtitle: String, violet: Color, panel: Color, muted: Color) {
+    Card(colors = CardDefaults.cardColors(containerColor = panel), shape = RoundedCornerShape(22.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.AutoAwesome, null, tint = violet, modifier = Modifier.size(34.dp))
+            Text(title, color = Color(0xFFF5F5FF), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = muted, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
