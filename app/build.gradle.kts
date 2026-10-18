@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val stableKeystorePath = System.getenv("ONCE_SIGNING_KEYSTORE")
+
 android {
     namespace = "com.onceinawhile.app"
     compileSdk = 35
@@ -10,8 +12,32 @@ android {
         applicationId = "com.onceinawhile.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = providers.gradleProperty("appVersionCode").orElse("2").get().toInt()
+        versionName = providers.gradleProperty("appVersionName").orElse("1.0.1").get()
+    }
+    signingConfigs {
+        if (!stableKeystorePath.isNullOrBlank()) {
+            create("stable") {
+                storeFile = file(stableKeystorePath)
+                storePassword = System.getenv("ONCE_SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("ONCE_SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("ONCE_SIGNING_KEY_PASSWORD")
+                storeType = "PKCS12"
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (!stableKeystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
+        getByName("release") {
+            isMinifyEnabled = false
+            if (!stableKeystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
     }
     buildFeatures { compose = true }
     compileOptions {

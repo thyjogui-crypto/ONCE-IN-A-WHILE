@@ -2,6 +2,9 @@ package com.onceinawhile.app
 
 import android.Manifest
 import android.app.DatePickerDialog
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.app.TimePickerDialog
 import android.content.pm.PackageManager
 import android.os.Build
@@ -403,6 +406,34 @@ fun RoutineApp(onExport: () -> Unit, onImport: () -> Unit, theme: String, onThem
                             Text("Exportar cópia de segurança")
                         }
                         OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importar cópia de segurança") }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            OutlinedButton(
+                                onClick = {
+                                    val alarmIntent = Intent(
+                                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+                                    ).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(alarmIntent)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Permitir alarmes e lembretes")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val notificationIntent = Intent(
+                                    Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                ).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(notificationIntent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Gerir permissões de notificações")
+                        }
                         Text("Os alarmes e notificações dependem das permissões e das restrições de bateria do Android.", style = MaterialTheme.typography.bodySmall, color = muted)
                     }
                 }
