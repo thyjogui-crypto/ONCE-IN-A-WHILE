@@ -12,5 +12,6 @@ data class Task(
     val scheduleMode: String = "specific",
     val periods: List<String> = emptyList(),
     val dailyDoneDate: String = "",
-    val snoozedUntil: Long = 0L
+    val snoozedUntil: Long = 0L,
+    val completionHistory: List<String> = emptyList()
 )
