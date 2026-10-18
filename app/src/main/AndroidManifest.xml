@@ -18,6 +18,7 @@
         </activity>
         <receiver android:name=".ReminderReceiver" android:exported="false" />
         <receiver android:name=".CompleteReceiver" android:exported="false" />
+        <receiver android:name=".SnoozeReceiver" android:exported="false" />
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
