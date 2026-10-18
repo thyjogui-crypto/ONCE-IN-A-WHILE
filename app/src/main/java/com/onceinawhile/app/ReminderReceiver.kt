@@ -50,11 +50,9 @@ class ReminderReceiver : BroadcastReceiver() {
             .build()
         nm.notify(id.toInt(), notification)
 
-        if (task.remindersSent < 11) {
-            val updated = task.copy(remindersSent = task.remindersSent + 1)
-            TaskStore.upsert(context, updated)
-            ReminderScheduler.scheduleRetry(context, updated)
-        }
+        val updated = task.copy(remindersSent = task.remindersSent + 1)
+        TaskStore.upsert(context, updated)
+        ReminderScheduler.scheduleRetry(context, updated)
     }
 }
 
