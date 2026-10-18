@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,14 +99,28 @@ fun RoutineApp(onExport: () -> Unit, onImport: () -> Unit, theme: String, onThem
             Text("$pending pendentes · $done concluídas", color = MaterialTheme.colorScheme.onSurfaceVariant)
             LinearProgressIndicator(progress = { if (tasks.isEmpty()) 0f else done.toFloat() / tasks.size }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
                 listOf("Todas", "Atrasadas", "Hoje", "Futuras", "Concluídas").forEach { f ->
-                    FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f) })
+                    FilterChip(
+                        selected = filter == f,
+                        onClick = { filter = f },
+                        label = { Text(f, maxLines = 1, softWrap = false) }
+                    )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
                 (listOf("Todas") + categories).forEach { c ->
-                    FilterChip(selected = categoryFilter == c, onClick = { categoryFilter = c }, label = { Text(c) })
+                    FilterChip(
+                        selected = categoryFilter == c,
+                        onClick = { categoryFilter = c },
+                        label = { Text(c, maxLines = 1, softWrap = false) }
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))
